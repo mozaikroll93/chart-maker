@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CP 关系图生成器</title>
+  <meta name="description" content="拖入角色图片或从 Bangumi 导入，自动排成一圈，点一下改图例，连线有手绘感。纯前端，数据只存在你的浏览器里。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Long+Cang&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">CP 关系图</div>
+
+    <div class="group" role="toolbar" aria-label="工具">
+      <button type="button" class="tool" data-tool="select" title="选择 / 移动 (V)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.5L10 19z"/></svg><span>选择</span>
+      </button>
+      <button type="button" class="tool" data-tool="connect" title="连线 (L)：从一个头像拖到另一个">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="17" r="2.6"/><circle cx="19" cy="7" r="2.6"/><path d="M7 15.5C10 8 14 13 17 8.5" fill="none" stroke-width="2"/></svg><span>连线</span>
+      </button>
+      <button type="button" class="tool" data-tool="text" title="文字 (T)：在画布上点一下写字">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v3h-2V7h-4v11h2v2H9v-2h2V7H7v1H5z"/></svg><span>文字</span>
+      </button>
+      <div id="pens" class="pens" aria-label="连线颜色"></div>
+    </div>
+
+    <div class="group">
+      <button type="button" id="undo" class="icon-btn" title="撤销 (Ctrl+Z)" aria-label="撤销">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7H4V3M4.5 7.5A8 8 0 1 1 6 17" fill="none" stroke-width="2"/></svg>
+      </button>
+      <button type="button" id="redo" class="icon-btn" title="重做 (Ctrl+Shift+Z)" aria-label="重做">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 7h4V3M19.5 7.5A8 8 0 1 0 18 17" fill="none" stroke-width="2"/></svg>
+      </button>
+      <span class="zoom">
+        <button type="button" id="zoom-out" class="icon-btn" aria-label="缩小">−</button>
+        <button type="button" id="zoom-val" class="zoom-val" title="适应窗口">适应</button>
+        <button type="button" id="zoom-in" class="icon-btn" aria-label="放大">+</button>
+      </span>
+    </div>
+
+    <div class="group end">
+      <div class="menu-wrap">
+        <button type="button" id="menu-btn" class="icon-btn" aria-label="更多" title="更多">⋯</button>
+        <div id="menu" class="menu" hidden>
+          <button type="button" id="menu-new">新建空白图</button>
+          <button type="button" id="menu-open">打开工程文件…</button>
+          <button type="button" id="menu-save">保存工程文件</button>
+          <button type="button" id="menu-legend" hidden>显示图例</button>
+        </div>
+      </div>
+      <button type="button" id="export" class="btn primary">导出图片</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside id="sidebar" class="panel left" aria-label="角色"></aside>
+    <section id="stage-wrap" class="stage-wrap">
+      <svg id="stage" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="关系图画布"></svg>
+    </section>
+    <aside id="inspector" class="panel right" aria-label="属性"></aside>
+  </main>
+
+  <div class="drop-veil" aria-hidden="true"><div>松开鼠标，加入角色</div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -44,10 +44,10 @@
   （沙箱网络受限，没能实测 `lain.bgm.tv` 的响应头，需要在浏览器里验证）。
 - **其他可接的数据源**（后续扩展）：AniList GraphQL（角色数据很全，欧美用户多）、Jikan（MyAnimeList 非官方 API）、VNDB（视觉小说）。
 
-## 4. 对本项目的建议
+## 4. 最终方案（已实现）
 
-- **前端**：Vite + 任意框架（或原生 JS），用 SVG 或 Canvas 画「圆形头像节点 + 连线」，支持连线类型（恋爱/友情/敌对……）、颜色、标签、图例。
-- **托管**：**Cloudflare Pages + Pages Functions**（或 Worker）。静态页面和 `/img?url=` 图片代理放在同一个仓库、同一个域名下，免费额度足够；
-  API 请求直接从浏览器发往 `api.bgm.tv`，只有图片走代理（代理要限定只允许 `lain.bgm.tv` 等白名单域名，防止被滥用成开放代理）。
-  如果不想要后端，也可以先上 GitHub Pages，再让用户手动上传头像作为兜底。
-- **数据存储**：学 hangbang / Calabash，全部存在本地（localStorage / IndexedDB），并提供 JSON 导入导出和「分享链接」（把角色 ID 和连线编码进 URL）。
+- **纯前端、零依赖、免构建**：原生 JS + SVG，整个仓库放到 GitHub Pages / Cloudflare Pages 即可。
+- **Bangumi 只是导入的便利选项**：浏览器直接调用 `api.bgm.tv`（它允许跨域）。头像先直接下载；如果被跨域拦下，再改用公共图片代理 `wsrv.nl`，不需要自建后端。大多数用户还是手动上传或拖入图片。
+- **不解析动画官网**：各家官网结构都不一样，放弃。
+- **数据**：存在本地 IndexedDB，另外提供工程文件（JSON，内含图片）导入导出。
+- 单圈容量的测试见 [capacity.md](capacity.md)。
