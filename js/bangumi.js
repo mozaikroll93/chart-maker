@@ -167,8 +167,7 @@ function build() {
         chineseName(c.id),
       ]);
       btn.textContent = `下载中 ${++done}/${list.length}`;
-      // Bangumi portraits are tall; frame the top where the face usually is
-      return { name: cn || c.name, img, fx: 0.5, fy: 0.28 };
+      return { name: cn || c.name, img };
     });
     addNodes(items);
     btn.textContent = '加入画布';

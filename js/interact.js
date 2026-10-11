@@ -1,4 +1,4 @@
-import { store, emit, begin, commit, change, select, legendColor, nodeRadius, layoutRing } from './state.js';
+import { store, emit, begin, commit, change, select, legendColor, nodeRadius, imageFrame, clampFocus, MAX_ZOOM } from './state.js';
 import { edgeGeom, defaultBend, ui } from './render.js';
 import { uid, clamp } from './util.js';
 
@@ -35,8 +35,35 @@ export function setupInteraction(svgEl, wrapEl) {
 
   let st = null; // pointer session
   let lastClick = { t: 0, key: '' };
+  const pts = new Map(); // active pointers, for two-finger zoom
+  const capture = (id) => {
+    try {
+      svg.setPointerCapture(id);
+    } catch {
+      /* pointer already gone */
+    }
+  };
+  const spread = () => {
+    const [a, b] = [...pts.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
 
   svg.addEventListener('pointerdown', (evt) => {
+    pts.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
+    if (st && pts.size === 2) {
+      // second finger: pinch-zoom the picture the first finger is on
+      capture(evt.pointerId);
+      const n = st.t?.kind === 'node' && store.doc.nodes.find((x) => x.id === st.t.id);
+      const meta = n?.img && store.images.get(n.img);
+      if (meta) {
+        begin();
+        select({ kind: 'node', id: n.id });
+        st.pinch = { n, meta, d0: spread(), z0: n.zoom || 1 };
+        st.dragging ||= { move() {} };
+      }
+      return;
+    }
+    if (st) return;
     if (evt.button !== 0 || editor) {
       if (editor) finishEdit(true);
       if (evt.button !== 0) return;
@@ -46,11 +73,21 @@ export function setupInteraction(svgEl, wrapEl) {
     const t = targetOf(evt);
     const p = svgPoint(evt);
     st = { t, start: p, last: p, cx: evt.clientX, cy: evt.clientY, dragging: false };
-    svg.setPointerCapture(evt.pointerId);
+    capture(evt.pointerId);
     evt.preventDefault();
   });
 
   svg.addEventListener('pointermove', (evt) => {
+    if (pts.has(evt.pointerId)) pts.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
+    if (st?.pinch) {
+      if (pts.size === 2) {
+        const { n, meta, d0, z0 } = st.pinch;
+        n.zoom = clamp((z0 * spread()) / d0, 1, MAX_ZOOM);
+        clampFocus(n, meta);
+        emit();
+      }
+      return;
+    }
     if (!st) {
       if (store.tool === 'connect' && ui.pendingFrom) {
         const p = svgPoint(evt);
@@ -74,7 +111,8 @@ export function setupInteraction(svgEl, wrapEl) {
   });
 
   const end = (evt) => {
-    if (!st) return;
+    pts.delete(evt.pointerId);
+    if (!st || pts.size > 0) return;
     const s = st;
     st = null;
     if (s.dragging) {
@@ -90,10 +128,30 @@ export function setupInteraction(svgEl, wrapEl) {
     onClick(s.t, s.start, dbl, evt);
   };
   svg.addEventListener('pointerup', end);
-  svg.addEventListener('pointercancel', () => {
+  svg.addEventListener('pointercancel', (evt) => {
+    pts.delete(evt.pointerId);
+    if (pts.size > 0) return;
     if (st?.dragging) commit();
     st = null;
   });
+
+  // wheel over an avatar zooms its picture; anywhere else the page scrolls as usual
+  let wheelTimer;
+  svg.addEventListener('wheel', (evt) => {
+    const t = targetOf(evt);
+    if (t?.kind !== 'node' || store.tool !== 'select') return;
+    const n = store.doc.nodes.find((x) => x.id === t.id);
+    const meta = n?.img && store.images.get(n.img);
+    if (!meta) return;
+    evt.preventDefault();
+    begin();
+    if (store.sel?.id !== n.id) select({ kind: 'node', id: n.id });
+    n.zoom = clamp((n.zoom || 1) * Math.exp(-evt.deltaY * (evt.ctrlKey ? 0.01 : 0.0015)), 1, MAX_ZOOM);
+    clampFocus(n, meta);
+    emit();
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(commit, 350);
+  }, { passive: false });
 }
 
 function startDrag(st) {
@@ -119,17 +177,19 @@ function startDrag(st) {
   const dx = (obj) => st.start.x - obj.x, dy = (obj) => st.start.y - obj.y;
   switch (t.kind) {
     case 'node': {
+      // characters stay on the ring; dragging one slides its picture inside the circle
       const n = doc.nodes.find((x) => x.id === t.id);
-      const ox = dx(n), oy = dy(n);
       select({ kind: 'node', id: n.id });
+      const meta = n.img && store.images.get(n.img);
+      if (!meta) break;
+      const r = nodeRadius(doc);
       return {
         move(p) {
-          n.pinned = true;
-          n.x = p.x - ox;
-          n.y = p.y - oy;
-        },
-        end() {
-          layoutRing(store.doc);
+          if (st.pinch) return;
+          const { W, H } = imageFrame(meta, r, n.zoom || 1);
+          n.fx -= (p.x - st.last.x) / W;
+          n.fy -= (p.y - st.last.y) / H;
+          clampFocus(n, meta);
         },
       };
     }

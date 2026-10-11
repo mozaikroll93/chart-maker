@@ -43,6 +43,7 @@ window.addEventListener('pointerdown', () => (pointerHeld = true), true);
 window.addEventListener('pointerup', () => (pointerHeld = false), true);
 function busy(panel) {
   const ae = document.activeElement;
+  if (panel.querySelector('.cropper.active')) return true;
   if (!ae || !panel.contains(ae)) return false;
   return ae.matches('textarea, select, input:not([type]), input[type=text], input[type=search]') || (ae.type === 'range' && pointerHeld);
 }

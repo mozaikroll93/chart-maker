@@ -66,20 +66,44 @@ export function ringGeometry(doc, n) {
   return { cx, cy, r, d };
 }
 
+// Every character sits on the ring; the list order is the order around it.
 export function layoutRing(doc) {
-  const ringNodes = doc.nodes.filter((nd) => !nd.pinned);
-  const g = ringGeometry(doc, ringNodes.length);
-  ringNodes.forEach((nd, i) => {
-    const a = -Math.PI / 2 + (i / ringNodes.length) * Math.PI * 2;
+  const nodes = doc.nodes;
+  const g = ringGeometry(doc, nodes.length);
+  nodes.forEach((nd, i) => {
+    const a = -Math.PI / 2 + (i / nodes.length) * Math.PI * 2;
     nd.x = g.cx + g.r * Math.cos(a);
     nd.y = g.cy + g.r * Math.sin(a);
   });
   return g;
 }
 
-export function nodeRadius(doc, nd) {
-  const g = ringGeometry(doc, doc.nodes.filter((n) => !n.pinned).length);
-  return (g.d / 2) * (nd.scale || 1);
+export function nodeRadius(doc) {
+  return ringGeometry(doc, doc.nodes.length).d / 2;
+}
+
+// ---------- picture framing inside an avatar ----------
+// A node's picture covers its circle at zoom 1; (fx, fy) is the point of the
+// picture, as a fraction of its size, that sits at the circle's centre.
+
+export const MAX_ZOOM = 5;
+
+export function imageFrame(meta, r, zoom = 1) {
+  const s = (2 * r * zoom) / Math.min(meta.w, meta.h);
+  return { s, W: meta.w * s, H: meta.h * s };
+}
+
+/** Keep the focus where the picture still fills the whole circle. */
+export function clampFocus(n, meta) {
+  n.zoom = clamp(n.zoom || 1, 1, MAX_ZOOM);
+  const k = Math.min(meta.w, meta.h) / (2 * n.zoom);
+  n.fx = clamp(n.fx, k / meta.w, 1 - k / meta.w);
+  n.fy = clamp(n.fy, k / meta.h, 1 - k / meta.h);
+}
+
+/** Starting focus for a new picture: tall character art is framed near the top, where the face usually is. */
+export function defaultFocus(meta) {
+  return meta && meta.h > meta.w * 1.2 ? { fx: 0.5, fy: 0.18 } : { fx: 0.5, fy: 0.5 };
 }
 
 // ---------- store ----------
@@ -200,7 +224,13 @@ export function addNodes(list) {
   const room = RING_HARD_LIMIT - store.doc.nodes.length;
   const take = list.slice(0, Math.max(0, room));
   change((d) => {
-    for (const it of take) d.nodes.push({ id: uid('n'), name: it.name || '', img: it.img || null, fx: it.fx ?? 0.5, fy: it.fy ?? 0.5, zoom: 1, scale: 1, pinned: false, x: 0, y: 0 });
+    for (const it of take) {
+      const meta = it.img && store.images.get(it.img);
+      const n = { id: uid('n'), name: it.name || '', img: it.img || null, ...defaultFocus(meta), zoom: 1, x: 0, y: 0 };
+      if (it.fy != null) Object.assign(n, { fx: it.fx, fy: it.fy });
+      if (meta) clampFocus(n, meta);
+      d.nodes.push(n);
+    }
   });
   return take.length;
 }

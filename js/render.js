@@ -1,4 +1,4 @@
-import { store, nodeRadius, legendColor, ringGeometry } from './state.js';
+import { store, nodeRadius, legendColor, ringGeometry, imageFrame } from './state.js';
 import { strokePaths, arrowPaths, quadTangent } from './stroke.js';
 import { esc, clamp } from './util.js';
 
@@ -67,7 +67,7 @@ export function edgeGeom(doc, e) {
 
 /** Bend for a new edge: neighbours arc around the outside; everything else bows toward the centre so it stays clear of the other avatars. */
 export function defaultBend(doc, a, b) {
-  const g = ringGeometry(doc, doc.nodes.filter((n) => !n.pinned).length);
+  const g = ringGeometry(doc, doc.nodes.length);
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
   const mx = (a.x + b.x) / 2 - g.cx, my = (a.y + b.y) / 2 - g.cy;
   const outward = Math.sign((-dy / len) * mx + (dx / len) * my) || 1;
@@ -133,8 +133,7 @@ function renderNodes(doc) {
     const meta = n.img && store.images.get(n.img);
     let img = '';
     if (meta) {
-      const s = (d * (n.zoom || 1)) / Math.min(meta.w, meta.h);
-      const W = meta.w * s, H = meta.h * s;
+      const { s, W, H } = imageFrame(meta, r, n.zoom || 1);
       const fx = clamp(n.fx, r / W, 1 - r / W), fy = clamp(n.fy, r / H, 1 - r / H);
       img = `<clipPath id="cp-${n.id}"><circle r="${f1(r)}"/></clipPath>
         <g clip-path="url(#cp-${n.id})"><use href="#im-${n.img}" transform="translate(${f1(-fx * W)} ${f1(-fy * H)}) scale(${s.toFixed(5)})"/></g>`;

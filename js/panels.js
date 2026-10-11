@@ -1,7 +1,7 @@
 import { h, $, clamp, toast } from './util.js';
 import {
   store, emit, begin, commit, change, select, findSel, layoutRing, legendColor, ringGeometry,
-  removeLegendItem, addLegendItem, CANVAS_PRESETS, presetLayout, RING_COMFORT_LIMIT, RING_SOFT_LIMIT, RING_HARD_LIMIT, canUndo, canRedo,
+  removeLegendItem, addLegendItem, CANVAS_PRESETS, presetLayout, imageFrame, clampFocus, defaultFocus, MAX_ZOOM, RING_COMFORT_LIMIT, RING_SOFT_LIMIT, RING_HARD_LIMIT, canUndo, canRedo,
 } from './state.js';
 import { defaultBend } from './render.js';
 import { pickColor, editEdgeLabel, editTitle, finishEdit } from './interact.js';
@@ -62,7 +62,7 @@ function pickFile(accept, multiple, cb) {
 /** How large one avatar ends up when the image is viewed full-width on a phone (~390 CSS px). */
 export function capacityInfo(doc) {
   const n = doc.nodes.length;
-  const g = ringGeometry(doc, Math.max(doc.nodes.filter((x) => !x.pinned).length, 1));
+  const g = ringGeometry(doc, Math.max(n, 1));
   const phone = Math.round((g.d / doc.canvas.w) * 390);
   const level = n > RING_SOFT_LIMIT ? 'bad' : n > RING_COMFORT_LIMIT ? 'warn' : 'ok';
   return { n, d: Math.round(g.d), phone, level };
@@ -88,7 +88,45 @@ export function renderSidebar(root, { onAddFiles, onBangumi }) {
   ].filter(Boolean));
 }
 
-let dragFrom = null;
+/** Drag the ⋮⋮ grip (mouse or finger) to move a character to another place on the ring. */
+function reorderByGrip(grip, li, from) {
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    const rows = [...li.parentElement.children];
+    li.classList.add('dragging');
+    let to = from;
+    const mark = () => {
+      rows.forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+      if (to === from || to === from + 1) return;
+      if (to < rows.length) rows[to].classList.add('drop-before');
+      else rows[rows.length - 1].classList.add('drop-after');
+    };
+    const move = (ev) => {
+      to = rows.findIndex((r) => {
+        const b = r.getBoundingClientRect();
+        return ev.clientY < b.top + b.height / 2;
+      });
+      if (to < 0) to = rows.length;
+      mark();
+    };
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      rows.forEach((r) => r.classList.remove('drop-before', 'drop-after', 'dragging'));
+      const dest = to > from ? to - 1 : to;
+      if (dest !== from) {
+        change((d) => {
+          const [m] = d.nodes.splice(from, 1);
+          d.nodes.splice(dest, 0, m);
+        });
+      }
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up, { once: true });
+    grip.addEventListener('pointercancel', up, { once: true });
+  });
+}
+
 function charRow(n, i) {
   const meta = n.img && store.images.get(n.img);
   const sel = store.sel?.kind === 'node' && store.sel.id === n.id;
@@ -100,41 +138,18 @@ function charRow(n, i) {
   });
   name.addEventListener('change', () => change(() => (n.name = name.value.trim())));
   name.addEventListener('focus', () => select({ kind: 'node', id: n.id }));
-  const li = h('li', { class: 'char' + (sel ? ' on' : '') + (n.pinned ? ' pinned' : ''), draggable: true, 'data-i': i },
-    h('span', { class: 'grip', 'aria-hidden': true }, '⋮⋮'),
+  const grip = h('span', { class: 'grip', title: '拖动调整在圆上的顺序', 'aria-label': '拖动排序' }, '⋮⋮');
+  const li = h('li', { class: 'char' + (sel ? ' on' : '') },
+    grip,
     meta ? h('img', { src: meta.src, alt: '' }) : h('span', { class: 'noimg' }),
     name,
-    n.pinned ? h('span', { class: 'tag', title: '已从圆环上移开' }, '自由') : null,
     h('button', { type: 'button', class: 'icon-btn small', 'aria-label': '删除', onclick: (e) => {
       e.stopPropagation();
       select({ kind: 'node', id: n.id });
       document.dispatchEvent(new CustomEvent('delete-selection'));
     } }, '✕'));
-  li.addEventListener('click', (e) => e.target !== name && select({ kind: 'node', id: n.id }));
-  li.addEventListener('dragstart', (e) => {
-    dragFrom = i;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/x-char', String(i));
-  });
-  li.addEventListener('dragover', (e) => {
-    if (dragFrom == null) return;
-    e.preventDefault();
-    li.classList.add('drop');
-  });
-  li.addEventListener('dragleave', () => li.classList.remove('drop'));
-  li.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    li.classList.remove('drop');
-    const from = dragFrom;
-    dragFrom = null;
-    if (from == null || from === i) return;
-    change((d) => {
-      const [m] = d.nodes.splice(from, 1);
-      d.nodes.splice(i, 0, m);
-    });
-  });
-  li.addEventListener('dragend', () => (dragFrom = null));
+  li.addEventListener('click', (e) => e.target !== name && e.target !== grip && select({ kind: 'node', id: n.id }));
+  reorderByGrip(grip, li, i);
   return li;
 }
 
@@ -198,7 +213,7 @@ function docPanel() {
             Object.assign(doc.canvas, { preset: sel.value, w: p.w, h: p.h });
             Object.assign(doc.title, L.title);
             Object.assign(doc.legend, L.legend);
-            for (const o of [...doc.texts, ...doc.nodes.filter((n) => n.pinned)]) {
+            for (const o of doc.texts) {
               o.x *= kx;
               o.y *= ky;
             }
@@ -206,14 +221,14 @@ function docPanel() {
           return sel;
         })(),
         colorSwatch(d.canvas.bg, (c) => change(() => (d.canvas.bg = c)), '背景色'))),
-    h('button', { type: 'button', class: 'btn block', disabled: !d.nodes.some((n) => n.pinned), onclick: () => change((doc) => doc.nodes.forEach((n) => (n.pinned = false))) }, '把所有角色放回圆环'),
     h('div', { class: 'tips' },
       h('h3', {}, '怎么用'),
       h('ul', {},
         h('li', {}, '点图例里的文字就能改，点色块换颜色。'),
         h('li', {}, '选「连线」或按 L，从一个头像拖到另一个头像。'),
         h('li', {}, '点中一条线后，拖中间的圆点调弧度，双击写字。'),
-        h('li', {}, '把头像拖离圆环就能自由摆放。'))),
+        h('li', {}, '拖动头像调整露出的部位，滚轮或双指缩放。'),
+        h('li', {}, '在左侧列表拖 ⋮⋮ 调整角色在圆上的顺序。'))),
   ];
 }
 
@@ -226,17 +241,24 @@ function nodePanel(n) {
     head('角色'),
     cropper(n),
     textField('名字', { get: () => n.name, set: (v) => (n.name = v), placeholder: '可选；勾选「显示角色名」才会出现在图上' }),
-    slider('头像缩放', { min: 1, max: 4, step: 0.05, get: () => n.zoom || 1, set: (v) => (n.zoom = v), fmt: (v) => v.toFixed(2) + '×' }),
-    slider('大小', { min: 0.5, max: 2.2, step: 0.05, get: () => n.scale || 1, set: (v) => (n.scale = v), fmt: (v) => Math.round(v * 100) + '%' }),
+    slider('缩放', { min: 1, max: MAX_ZOOM, step: 0.05, get: () => n.zoom || 1, set: (v) => {
+      n.zoom = v;
+      const meta = n.img && store.images.get(n.img);
+      if (meta) clampFocus(n, meta);
+    }, fmt: (v) => v.toFixed(2) + '×' }),
     h('div', { class: 'btn-row' },
       h('button', { type: 'button', class: 'btn', onclick: () => pickFile('image/*', false, async ([f]) => {
         if (!f) return;
         const id = await addImageBlob(f);
-        change(() => Object.assign(n, { img: id, fx: 0.5, fy: 0.5, zoom: 1 }));
+        change(() => {
+          const meta = store.images.get(id);
+          Object.assign(n, { img: id, zoom: 1, ...defaultFocus(meta) });
+          clampFocus(n, meta);
+        });
       }) }, '更换图片'),
-      n.pinned ? h('button', { type: 'button', class: 'btn', onclick: () => change(() => (n.pinned = false)) }, '放回圆环') : null),
+    ),
     h('button', { type: 'button', class: 'btn danger block', onclick: () => document.dispatchEvent(new CustomEvent('delete-selection')) }, '删除角色'),
-    h('p', { class: 'hint' }, '连线：按 L 切到连线工具，从这个头像拖到另一个头像。'),
+    h('p', { class: 'hint' }, '也可以直接在画布上拖动头像调整露出的部位，电脑用滚轮、手机用双指缩放。'),
   ];
 }
 
@@ -244,34 +266,35 @@ function nodePanel(n) {
 function cropper(n) {
   const meta = n.img && store.images.get(n.img);
   if (!meta) return h('div', { class: 'cropper empty' }, '没有图片');
-  const size = 168;
+  const r = 84;
   const img = h('img', { src: meta.src, alt: '', draggable: false });
   const box = h('div', { class: 'cropper', title: '拖动调整构图，滚轮缩放' }, img);
   const place = () => {
-    const s = (size * (n.zoom || 1)) / Math.min(meta.w, meta.h);
-    const W = meta.w * s, H = meta.h * s, r = size / 2;
-    const fx = clamp(n.fx, r / W, 1 - r / W), fy = clamp(n.fy, r / H, 1 - r / H);
-    Object.assign(img.style, { width: W + 'px', height: H + 'px', left: r - fx * W + 'px', top: r - fy * H + 'px' });
-    return { W, H, r };
+    const { W, H } = imageFrame(meta, r, n.zoom || 1);
+    Object.assign(img.style, { width: W + 'px', height: H + 'px', left: r - n.fx * W + 'px', top: r - n.fy * H + 'px' });
+    return { W, H };
   };
+  clampFocus(n, meta);
   place();
   let drag = null;
   box.addEventListener('pointerdown', (e) => {
     box.setPointerCapture(e.pointerId);
-    const { W, H, r } = place();
-    drag = { x: e.clientX, y: e.clientY, fx: clamp(n.fx, r / W, 1 - r / W), fy: clamp(n.fy, r / H, 1 - r / H), W, H };
+    box.classList.add('active'); // keeps the panel from re-rendering under the pointer
+    drag = { x: e.clientX, y: e.clientY };
     begin();
   });
   box.addEventListener('pointermove', (e) => {
     if (!drag) return;
-    n.fx = drag.fx - (e.clientX - drag.x) / drag.W;
-    n.fy = drag.fy - (e.clientY - drag.y) / drag.H;
-    const { W, H, r } = place();
-    n.fx = clamp(n.fx, r / W, 1 - r / W);
-    n.fy = clamp(n.fy, r / H, 1 - r / H);
+    const { W, H } = place();
+    n.fx -= (e.clientX - drag.x) / W;
+    n.fy -= (e.clientY - drag.y) / H;
+    drag = { x: e.clientX, y: e.clientY };
+    clampFocus(n, meta);
+    place();
     emit();
   });
   const up = () => {
+    box.classList.remove('active');
     if (drag) commit();
     drag = null;
   };
@@ -280,7 +303,8 @@ function cropper(n) {
   box.addEventListener('wheel', (e) => {
     e.preventDefault();
     begin();
-    n.zoom = clamp((n.zoom || 1) * (e.deltaY < 0 ? 1.08 : 1 / 1.08), 1, 4);
+    n.zoom = (n.zoom || 1) * Math.exp(-e.deltaY * 0.0015);
+    clampFocus(n, meta);
     place();
     emit();
     clearTimeout(box._t);
