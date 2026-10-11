@@ -162,6 +162,11 @@ button:disabled { cursor: default; opacity: .4; }
 .fine a { color: inherit; }
 
 /* ---------- misc ---------- */
+.confirm-dialog { border: 0; border-radius: 14px; padding: 20px; width: min(380px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+.confirm-dialog::backdrop { background: rgba(20,20,30,.35); }
+.confirm-dialog p { margin: 0 0 16px; }
+.confirm-dialog .btn-row { justify-content: flex-end; }
+.confirm-dialog .btn-row .btn { flex: none; }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #1d1d22; color: #fff; padding: 9px 16px; border-radius: 10px; opacity: 0; pointer-events: none; transition: .2s; z-index: 50; max-width: calc(100vw - 32px); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 .drop-veil { position: fixed; inset: 0; display: none; place-items: center; background: rgba(47,107,255,.08); border: 3px dashed var(--sel); z-index: 40; pointer-events: none; }

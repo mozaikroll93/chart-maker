@@ -33,7 +33,22 @@ export function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-export function download(blob, filename) {
+// Inside a claude.ai Artifact a page cannot start downloads itself; the
+// viewer's `downloads` capability asks the viewer to save the file instead.
+let downloadsCap;
+const artifactDownloads = () => (downloadsCap ??= window.claude?.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null));
+artifactDownloads();
+
+export async function download(blob, filename) {
+  const cap = await artifactDownloads();
+  if (cap) {
+    try {
+      await cap.save({ filename, data: blob });
+    } catch (e) {
+      if (e?.code !== 'declined') toast('没能保存文件：' + (e?.message || e?.code || '未知错误'));
+    }
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -41,6 +56,23 @@ export function download(blob, filename) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/** In-page confirmation (native confirm() is unavailable in some embeds). */
+export function confirmDialog(message, okLabel = '确定') {
+  return new Promise((resolve) => {
+    const dlg = h('dialog', { class: 'confirm-dialog' },
+      h('p', {}, message),
+      h('div', { class: 'btn-row' },
+        h('button', { type: 'button', class: 'btn', onclick: () => dlg.close('cancel') }, '取消'),
+        h('button', { type: 'button', class: 'btn primary', onclick: () => dlg.close('ok') }, okLabel)));
+    dlg.addEventListener('close', () => {
+      resolve(dlg.returnValue === 'ok');
+      dlg.remove();
+    });
+    document.body.append(dlg);
+    dlg.showModal();
+  });
 }
 
 let toastTimer;

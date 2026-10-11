@@ -1,4 +1,4 @@
-import { $, debounce, download, toast } from './util.js';
+import { $, debounce, download, toast, confirmDialog } from './util.js';
 import {
   store, subscribe, emit, change, undo, redo, select, layoutRing, replaceDoc, newDoc, onDocChange,
   addNodes, deleteSelection, addLegendItem, RING_HARD_LIMIT,
@@ -150,7 +150,7 @@ $('#export').onclick = async () => {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const blob = await renderPNG(1);
     const name = (store.doc.title.text.split('\n')[0] || 'shipping-chart').replace(/[\\/:*?"<>|]/g, '').trim();
-    download(blob, `${name || 'shipping-chart'}.png`);
+    await download(blob, `${name || 'shipping-chart'}.png`);
   } catch (e) {
     console.error(e);
     toast('导出失败：' + e.message);
@@ -166,10 +166,10 @@ $('#menu-btn').onclick = (e) => {
   menu.hidden = !menu.hidden;
 };
 document.addEventListener('click', (e) => !menu.contains(e.target) && (menu.hidden = true));
-$('#menu-new').onclick = () => {
-  if (store.doc.nodes.length && !confirm('清空当前画布，开始一张新图？（建议先保存工程文件）')) return;
-  replaceDoc(newDoc(store.doc.canvas.preset), new Map());
+$('#menu-new').onclick = async () => {
   menu.hidden = true;
+  if (store.doc.nodes.length && !(await confirmDialog('清空当前画布，开始一张新图？建议先保存工程文件。', '清空'))) return;
+  replaceDoc(newDoc(store.doc.canvas.preset), new Map());
 };
 $('#menu-save').onclick = () => {
   const name = (store.doc.title.text.split('\n')[0] || 'shipping-chart').replace(/[\\/:*?"<>|]/g, '').trim() || 'shipping-chart';
